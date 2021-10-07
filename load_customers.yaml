@@ -1,0 +1,100 @@
+scenarios:
+ default:
+    schema: run driver=http tags==phase:schema threads==1 cycles=1
+    rampup: run driver=http tags==phase:rampup cycles===TEMPLATE(rampup-cycles,100000) threads=auto diag=all
+ debug:
+    rampup: run driver=http tags==phase:rampup cycles=1 diag=all
+
+bindings:
+  # To enable an optional weighted set of hosts in place of a load balancer
+  # Examples
+  #   single host: stargate_host=host1
+  #   multiple hosts: stargate_host=host1,host2,host3
+  #   multiple weighted hosts: stargate_host=host1:3,host2:7
+  # weighted_hosts: WeightedStrings('<<stargate_host:stargate>>')
+  # http request id
+  request_id: ToHashedUUID(); ToString() -> String
+  customer_id: Mod(<<customer_count:100000>>); ToString() -> String
+  firstname: FirstNames()
+  lastname: LastNames()
+  club_id: Mod(<<customer_count:100000>>); ToHashedUUID(); ToString() -> String
+  club_membership: AddHashRange(0L,31536000000L); StartingEpochMillis('2015-01-01 23:59:59'); StringDateWrapper("yyyy-MM-dd HH:mm:ss.SSS");
+  cell_phone: CycleRange(999999999,1000000000)
+  email: Template('{}{}',Combinations('A-Z;A-Z;0-9;0-9;0-9'), FixedValue('@test.org'))
+  city: Cities()
+  state: StateCodes()
+  country: FixedValue('United States')
+  zip: ZipCodes()
+  dom_ticket_id: ToHashedUUID(); ToString() -> String
+  flight_1: Combinations('A-Z;A-Z;0-9;0-9;0-9')
+  bags_checked_1: FixedValues(0,1,2)
+  miles_earned_1: CycleRange(300,3500)
+  flight_date_1: StartingEpochMillis('2017-01-01 23:59:59'); AddHashRange(0L,31536000000L); StringDateWrapper("yyyy-MM-dd HH:mm:ss.SSS");
+  intl_ticket_id: ToHashedUUID(); ToString() -> String
+  flight_2: Combinations('A-Z;A-Z;0-9;0-9;0-9')
+  bags_checked_2: FixedValues(1,2)
+  miles_earned_2: CycleRange(600,10000)
+  flight_date_2: StartingEpochMillis('2017-04-01 23:59:59'); AddHashRange(0L,31536000000L); StringDateWrapper("yyyy-MM-dd HH:mm:ss.SSS");
+
+blocks:
+  - name: schema
+    tags:
+      phase: schema
+    statements:
+      - create-docs-collection : POST https://1a0b218d-19a8-4b40-8442-30e7a4df9d2d-us-west1.apps.astra-test.datastax.com/api/rest/v2/namespaces/wuperfdemo/collections/
+        Accept: "application/json"
+        X-Cassandra-Request-Id: "{request_id}"
+        X-Cassandra-Token: "<<auth_token:my_auth_token>>"
+        Content-Type: "application/json"
+        body: |
+          {
+              "name": "<<table:customers>>"
+          }
+        tags:
+          name: create-docs-collection
+
+  - name: rampup
+    tags:
+      phase: rampup
+    statements:        
+      - rampup-insert: PUT https://1a0b218d-19a8-4b40-8442-30e7a4df9d2d-us-west1.apps.astra-test.datastax.com/api/rest/v2/namespaces/wuperfdemo/collections/<<table:customers>>/{customer_id}
+        Accept: "application/json"
+        X-Cassandra-Request-Id: "{request_id}"
+        X-Cassandra-Token: "<<authtoken:my-auth-token>>"
+        Content-Type: "application/json"
+        body: |
+          {
+            "id": "{customer_id}",
+            "firstname": "{firstname}",
+            "lastname": "{lastname}",
+            "club_id": "{club_id}",
+            "club_membership_since" : "{club_membership}",
+            "contact" : {
+              "cell_phone": "{cell_phone}",
+              "email" : "{email}",
+              "address" : {
+                "city" : "{city}",
+                "state" : "{state}",
+                "zipcode" : "{zip}",   
+                "country" : "{country}"
+              }
+            },
+            "flight_history": {
+              "domestic" : {
+                "ticket" : "{dom_ticket_id}",
+                "flight" : "{flight_1}",
+                "bags_checked" : {bags_checked_1},
+                "miles_earned" : {miles_earned_1},
+                "flight_date" : "{flight_date_1}"
+              },
+              "international" : {
+                "ticket" : "{intl_ticket_id}",
+                "flight" : "{flight_2}",
+                "bags_checked" : {bags_checked_2},
+                "miles_earned" : {miles_earned_2},
+                "flight_date" : "{flight_date_2}"
+              }
+            }
+          }
+        tags:
+          name: rampup-insert
